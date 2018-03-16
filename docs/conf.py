@@ -27,11 +27,9 @@ class Mock(MagicMock):
 MOCK_MODULES = [
     'pandas',
     'eemeter',
-    'eemeter.consumption',
     'eemeter.weather',
     'eemeter.weather.location',
-    'eemeter.location',
-    'eemeter.evaluation',
+    'eemeter.structures.modeling_period',
     'scipy',
     'scipy.optimize',
     'scipy.stats',
@@ -41,7 +39,7 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#sys.path.insert(0, os.path.abspath('.'))
+sys.path.insert(0, os.path.abspath('..'))
 
 # -- General configuration ------------------------------------------------
 

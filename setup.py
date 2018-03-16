@@ -37,8 +37,7 @@ setup(name='thermostat',
     packages=find_packages(),
     package_data={'': ['*.csv']},
     install_requires=[
-        'eemeter==1.3.3',
-        'pandas==0.22.0',
-        'statsmodels==0.8.0'
+        'eemeter==1.3.*',
+        'pandas>=0.20.3',
     ],
 )
