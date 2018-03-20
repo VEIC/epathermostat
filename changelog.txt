@@ -34,5 +34,12 @@ Win10:
 All tests pass, Python 2&3, on both old and new envs
 Old-env test of revised parallel.py passes because the old eemeter had the same function in it, in the same place, as new eemeter, but the former version of this file was pointing to its extra "root" version of the function instead
 Linux:
-In progress, FTP access to NOAA is currently blocked on dev machine
-
+All but two tests pass, Python 2&3, on both old and new envs
+Failing test #1: test_thermostat_type_1_get_resistance_heat_utilization_bins in test_core.py; In 5 of the 12 temperature bins, the percent difference threshold is exceeded
+Failing test #2: test_calculate_epa_field_savings_metrics_type_1 in test_metrics.py; For the 5 metrics listed below, the absolute and/or percent difference threshold is exceeded
+  percent savings baseline regional
+  avoided daily mean core day runtime baseline regional
+  avoided total core day runtime baseline regional
+  baseline daily mean core day runtime baseline regional
+  baseline total core day runtime baseline regional
+Both depend on this test thermostat: /tests/data/thermostat_8465829e-df0d-449e-97bf-96317c24dec3.csv
