@@ -1,5 +1,5 @@
 import pandas as pd
-from eemeter.location import _load_zipcode_to_station_index
+from eemeter.weather.location import _load_zipcode_to_usaf_station_index
 
 from collections import defaultdict
 from itertools import cycle
@@ -44,7 +44,7 @@ def schedule_batches(metadata_filename, n_batches, zip_files=False, batches_dir=
             raise ValueError(message)
 
     metadata_df = pd.read_csv(metadata_filename, dtype={"zipcode": str})
-    index = _load_zipcode_to_station_index()
+    index = _load_zipcode_to_usaf_station_index()
     stations = [index[zipcode] for zipcode in metadata_df.zipcode]
 
     n_rows = metadata_df.shape[0]

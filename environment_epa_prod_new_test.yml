@@ -1,0 +1,7 @@
+name: epa_prod_new_test
+dependencies:
+- pandas>=0.20.3
+- python=3
+- statsmodels>=0.8.0
+- pip:
+  - eemeter==1.3.*

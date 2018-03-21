@@ -1,0 +1,45 @@
+Files added
+-----------
+changelog.txt: (this file) For internal VEIC use
+environment_epa_dev_new_test.yml: Conda env for VEIC use (running tests and using notebooks in Python 3)
+environment_epa_dev_new_test_Py2.yml: Conda env for VEIC use (running tests and using notebooks in Python 2)
+environment_epa_prod_new_test.yml: Conda env for VEIC use (manually testing thermostat module and running runtests.py in Python 3)
+environment_epa_prod_new_test_Py2.yml: Conda env for VEIC use (manually testing thermostat module and running runtests.py in Python 2)
+requirements.txt: Added this file in case want to create a prod env without the thermostat module also installed, as is done when installing using setup.py; Env created successfully from this file in Linux, but not Win10 (statsmodels build failed)
+
+Files changed
+-------------
+dev-requirements.txt: Upgraded dev requirements as needed to work with updated prod env, added matplotlib since one notebook imports this
+setup.py: Upgraded pandas and eemeter versions
+docs/conf.py: Updated eemeter in MOCK_MODULES and added path to thermostat module; Sphinx docs were successfully generated from this file
+thermostatreqnotes.txt: Updated with pip freeze of Linux setup.py env
+thermostat/importers.py: No changes needed - all eemeter references unchanged
+thermostat/parallel.py: Revised eemeter import - imported path and function name
+thermostat/stats.py: Removed two imports from eemeter that are not used
+
+Files not updated, but which will likely need update for package release
+------------------------------------------------------------------------
+.travis.yml
+runtests.py
+tox.ini
+travis_requirements.txt
+
+Environments
+------------
+Env created successfully from setup.py in Linux, but not in Win10 (statsmodels build fails - although it does install with conda on Windows)
+
+Automated Testing
+-----------------
+Win10:
+All tests pass, Python 2&3, on both old and new envs
+Old-env test of revised parallel.py passes because the old eemeter had the same function in it, in the same place, as new eemeter, but the former version of this file was pointing to its extra "root" version of the function instead
+Linux:
+All but two tests pass, Python 2&3, on both old and new envs
+Failing test #1: test_thermostat_type_1_get_resistance_heat_utilization_bins in test_core.py; In 5 of the 12 temperature bins, the percent difference threshold is exceeded
+Failing test #2: test_calculate_epa_field_savings_metrics_type_1 in test_metrics.py; For the 5 metrics listed below, the absolute and/or percent difference threshold is exceeded
+  percent savings baseline regional
+  avoided daily mean core day runtime baseline regional
+  avoided total core day runtime baseline regional
+  baseline daily mean core day runtime baseline regional
+  baseline total core day runtime baseline regional
+Both depend on this test thermostat: /tests/data/thermostat_8465829e-df0d-449e-97bf-96317c24dec3.csv
