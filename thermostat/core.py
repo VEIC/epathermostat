@@ -117,7 +117,14 @@ class Thermostat(object):
 
         self.temperature_in = self._interpolate(temperature_in, method="linear")
         self.temperature_out = self._interpolate(temperature_out, method="linear")
-        self.temperature_out_typical = temperature_out_typical
+
+        typical_year_timestamps = pd.DatetimeIndex(
+            start=datetime.strptime('2017' + '-01-01', '%Y-%m-%d'),
+            freq='H',
+            periods=8760
+        )
+        self.temperature_out_typical = pd.Series(index=typical_year_timestamps, data=temperature_out_typical.values)
+
         self.cooling_setpoint = cooling_setpoint
         self.heating_setpoint = heating_setpoint
 
@@ -1065,6 +1072,30 @@ class Thermostat(object):
 
         return demand
 
+    def get_typical_cooling_demand(self, temperature_in_typical_cooling, tau):
+        """ Calculate typical cooling demand for fitted physical parameters.
+
+        Parameters
+        ----------
+        temperature_in_typical_cooling : pandas.Series
+            A series with (core cooling days) hour-of-day mean indoor temperature for all hours of typical weather
+        tau : float, default: None
+            From fitted demand model.
+
+        Returns
+        -------
+        typical_cooling_demand : pandas.Series
+            A series containing typical daily cooling demand
+        """
+        self._protect_cooling()
+
+        hourly_temp_out = self.temperature_out_typical
+
+        hourly_hdd = (tau - (temperature_in_typical_cooling - hourly_temp_out)).apply(lambda x: np.maximum(x, 0))
+        demand = np.array([hdd.sum() / 24 for day, hdd in hourly_hdd.groupby(hourly_temp_out.index.date)])
+
+        return demand
+
     def get_baseline_cooling_runtime(self, baseline_cooling_demand, alpha):
         """ Calculate baseline cooling runtime given baseline cooling demand
         and fitted physical parameters.
@@ -1159,6 +1190,24 @@ class Thermostat(object):
         """
         return np.maximum(alpha * (typical_heating_demand), 0)
 
+    def get_typical_cooling_runtime(self, typical_cooling_demand, alpha):
+        """ Calculate typical cooling runtime given typical cooling demand
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        typical_cooling_demand : pandas.Series
+            A series containing typical daily cooling demand.
+        alpha : float
+            Slope of fitted line
+
+        Returns
+        -------
+        typical_cooling_runtime : pandas.Series
+            A series containing typical daily cooling runtime.
+        """
+        return np.maximum(alpha * (typical_cooling_demand), 0)
+
     def get_daily_avoided_cooling_runtime(
             self, baseline_runtime, core_cooling_day_set):
         return baseline_runtime - self.cool_runtime[core_cooling_day_set]
@@ -1197,6 +1246,37 @@ class Thermostat(object):
         temperature_in_typical_heating = temperature_in_typical_heating_df['average_temp']
 
         return temperature_in_typical_heating
+
+    def get_typical_cooling_indoor_temperature(self, core_cooling_day_set):
+        """
+        Find average hour-of-day indoor temperature during the core cooling days.
+
+        Parameters
+        ----------
+        core_cooling_day_set : array_like
+            Core day set over which to calculate cooling demand.
+
+        Returns
+        -------
+        temperature_in_typical_cooling : pandas.Series
+            A series with (core cooling days) hour-of-day mean indoor temperature for all hours of typical weather
+
+        """
+
+        self._protect_cooling()
+
+        core_day_set_temp_in = self.temperature_in[core_cooling_day_set.hourly]
+
+        core_day_set_temp_mean = core_day_set_temp_in.groupby(core_day_set_temp_in.index.hour).mean()
+        core_day_set_temp_mean.name = 'average_temp'
+
+        temperature_in_typical_cooling_df = pd.DataFrame(index=self.temperature_out_typical.index)
+        temperature_in_typical_cooling_df['hour_of_day'] = temperature_in_typical_cooling_df.index.hour
+        temperature_in_typical_cooling_df = temperature_in_typical_cooling_df.join(core_day_set_temp_mean,
+                                                                                   on='hour_of_day')
+        temperature_in_typical_cooling = temperature_in_typical_cooling_df['average_temp']
+
+        return temperature_in_typical_cooling
 
     def calculate_epa_field_savings_metrics(self,
             core_cooling_day_set_method="entire_dataset",
@@ -1367,6 +1447,38 @@ class Thermostat(object):
                 n_core_cooling_days = self.get_core_day_set_n_days(core_cooling_day_set)
                 n_days_in_inputfile_date_range = self.get_inputfile_date_range(core_cooling_day_set)
 
+                if self.temperature_out_typical is not None:
+
+                    typical_baseline_cooling_demand = self.get_typical_baseline_cooling_demand(
+                        baseline10_comfort_temperature,
+                        tau
+                    )
+                    typical_baseline_cooling_runtime = self.get_typical_baseline_cooling_runtime(
+                        typical_baseline_cooling_demand,
+                        alpha
+                    )
+
+                    typical_cooling_indoor_temperature = self.get_typical_cooling_indoor_temperature(
+                        core_cooling_day_set
+                    )
+                    typical_cooling_demand = self.get_typical_cooling_demand(
+                        typical_cooling_indoor_temperature,
+                        tau
+                    )
+                    typical_cooling_runtime = self.get_typical_cooling_runtime(
+                        typical_cooling_demand,
+                        alpha
+                    )
+
+                    avoided_typical_cooling_runtime = avoided(typical_baseline_cooling_runtime,
+                                                              typical_cooling_runtime)
+                    percent_typical_cooling_savings = percent_savings(avoided_typical_cooling_runtime,
+                                                                      typical_baseline_cooling_runtime)
+                else:
+
+                    percent_typical_cooling_savings = None
+
+
                 outputs = {
                     "sw_version": get_version(),
 
@@ -1411,6 +1523,8 @@ class Thermostat(object):
                     "total_core_cooling_runtime": total_runtime_core_cooling,
 
                     "daily_mean_core_cooling_runtime": average_daily_cooling_runtime,
+
+                    "percent_savings_typical": percent_typical_cooling_savings
                 }
 
                 metrics.append(outputs)

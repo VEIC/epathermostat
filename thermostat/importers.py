@@ -73,8 +73,9 @@ def from_csv(metadata_filename, verbose=False):
 
         yield thermostat
 
+# TODO: Change to retrieve tmy3 by zipcode and then remove typical_temperature_data as an input
 def get_single_thermostat(thermostat_id, zipcode, equipment_type,
-                          utc_offset, interval_data_filename):
+                          utc_offset, interval_data_filename, typical_temperature_data):
     """ Load a single thermostat directly from an interval data file.
 
     Parameters
@@ -165,7 +166,7 @@ def get_single_thermostat(thermostat_id, zipcode, equipment_type,
         station,
         temp_in,
         temp_out,
-        None,  # TODO: Add typical temp here
+        typical_temperature_data,
         cooling_setpoint,
         heating_setpoint,
         cool_runtime,
