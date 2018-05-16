@@ -117,7 +117,7 @@ class Thermostat(object):
 
         self.temperature_in = self._interpolate(temperature_in, method="linear")
         self.temperature_out = self._interpolate(temperature_out, method="linear")
-        self.temperature_out_typical = self._interpolate(temperature_out_typical, method="linear")
+        self.temperature_out_typical = temperature_out_typical
         self.cooling_setpoint = cooling_setpoint
         self.heating_setpoint = heating_setpoint
 

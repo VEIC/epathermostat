@@ -165,6 +165,7 @@ def get_single_thermostat(thermostat_id, zipcode, equipment_type,
         station,
         temp_in,
         temp_out,
+        None,  # TODO: Add typical temp here
         cooling_setpoint,
         heating_setpoint,
         cool_runtime,
