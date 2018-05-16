@@ -49,6 +49,12 @@ class Thermostat(object):
         0.5F.
         Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
         :code:`freq='H'`).
+    temperature_out_typical : pandas.Series
+        Contains typical outdoor temperature data as observed by a relevant
+        weather station in degrees Fahrenheit (F), with resolution of at least
+        0.5F.
+        Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
+        :code:`freq='H'`).
     cooling_setpoint : pandas.Series
         Contains target temperature (setpoint) data in degrees Fahrenheit (F),
         with resolution of at least 0.5F used to control cooling equipment.
@@ -100,8 +106,8 @@ class Thermostat(object):
 
     def __init__(
             self, thermostat_id, equipment_type, zipcode, station,
-            temperature_in, temperature_out, cooling_setpoint,
-            heating_setpoint, cool_runtime, heat_runtime,
+            temperature_in, temperature_out, temperature_out_typical,
+            cooling_setpoint, heating_setpoint, cool_runtime, heat_runtime,
             auxiliary_heat_runtime, emergency_heat_runtime):
 
         self.thermostat_id = thermostat_id
@@ -111,6 +117,7 @@ class Thermostat(object):
 
         self.temperature_in = self._interpolate(temperature_in, method="linear")
         self.temperature_out = self._interpolate(temperature_out, method="linear")
+        self.temperature_out_typical = self._interpolate(temperature_out_typical, method="linear")
         self.cooling_setpoint = cooling_setpoint
         self.heating_setpoint = heating_setpoint
 
@@ -944,6 +951,31 @@ class Thermostat(object):
         index = core_cooling_day_set.daily[core_cooling_day_set.daily].index
         return pd.Series(demand, index=index)
 
+    def get_typical_baseline_cooling_demand(self, temp_baseline, tau):
+        """ Calculate baseline cooling demand for typical-year outdoor air temperature
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        temp_baseline : float
+            Baseline comfort temperature
+        tau : float, default: None
+            From fitted demand model.
+
+        Returns
+        -------
+        typical_baseline_cooling_demand : pandas.Series
+            A series containing baseline daily cooling demand for a typical year
+        """
+        self._protect_cooling()
+
+        hourly_temp_out = self.temperature_out_typical
+
+        hourly_cdd = (tau - (temp_baseline - hourly_temp_out)).apply(lambda x: np.maximum(x, 0))
+        demand = np.array([cdd.sum() / 24 for day, cdd in hourly_cdd.groupby(hourly_temp_out.index.date)])
+
+        return demand
+
     def get_baseline_heating_demand(self, core_heating_day_set, temp_baseline, tau):
         """ Calculate baseline heating demand for a particular core heating day
         set and fitted physical parameters.
@@ -984,6 +1016,55 @@ class Thermostat(object):
         index = core_heating_day_set.daily[core_heating_day_set.daily].index
         return pd.Series(demand, index=index)
 
+    def get_typical_baseline_heating_demand(self, temp_baseline, tau):
+        """ Calculate baseline heating demand for typical-year outdoor air temperature
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        temp_baseline : float
+            Baseline comfort temperature
+        tau : float, default: None
+            From fitted demand model.
+
+        Returns
+        -------
+        typical_baseline_heating_demand : pandas.Series
+            A series containing baseline daily heating demand for a typical year
+        """
+        self._protect_heating()
+
+        hourly_temp_out = self.temperature_out_typical
+
+        hourly_hdd = (temp_baseline - hourly_temp_out - tau).apply(lambda x: np.maximum(x, 0))
+        demand = np.array([hdd.sum() / 24 for day, hdd in hourly_hdd.groupby(hourly_temp_out.index.date)])
+
+        return demand
+
+    def get_typical_heating_demand(self, temperature_in_typical_heating, tau):
+        """ Calculate typical heating demand for fitted physical parameters.
+
+        Parameters
+        ----------
+        temperature_in_typical_heating : pandas.Series
+            A series with (core heating days) hour-of-day mean indoor temperature for all hours of typical weather
+        tau : float, default: None
+            From fitted demand model.
+
+        Returns
+        -------
+        typical_heating_demand : pandas.Series
+            A series containing typical daily heating demand
+        """
+        self._protect_heating()
+
+        hourly_temp_out = self.temperature_out_typical
+
+        hourly_hdd = (temperature_in_typical_heating - hourly_temp_out - tau).apply(lambda x: np.maximum(x, 0))
+        demand = np.array([hdd.sum() / 24 for day, hdd in hourly_hdd.groupby(hourly_temp_out.index.date)])
+
+        return demand
+
     def get_baseline_cooling_runtime(self, baseline_cooling_demand, alpha):
         """ Calculate baseline cooling runtime given baseline cooling demand
         and fitted physical parameters.
@@ -1003,6 +1084,24 @@ class Thermostat(object):
             A series containing estimated daily baseline cooling runtime.
         """
         return np.maximum(alpha * (baseline_cooling_demand), 0)
+
+    def get_typical_baseline_cooling_runtime(self, typical_baseline_cooling_demand, alpha):
+        """ Calculate typical baseline cooling runtime given typical baseline cooling demand
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        typical_baseline_cooling_demand : pandas.Series
+            A series containing typical daily baseline cooling demand.
+        alpha : float
+            Slope of fitted line
+
+        Returns
+        -------
+        typical_baseline_cooling_runtime : pandas.Series
+            A series containing typical daily baseline cooling runtime.
+        """
+        return np.maximum(alpha * (typical_baseline_cooling_demand), 0)
 
     def get_baseline_heating_runtime(self, baseline_heating_demand, alpha):
         """ Calculate baseline heating runtime given baseline heating demand.
@@ -1024,6 +1123,42 @@ class Thermostat(object):
         """
         return np.maximum(alpha * (baseline_heating_demand), 0)
 
+    def get_typical_baseline_heating_runtime(self, typical_baseline_heating_demand, alpha):
+        """ Calculate typical baseline heating runtime given typical baseline heating demand
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        typical_baseline_heating_demand : pandas.Series
+            A series containing typical daily baseline heating demand.
+        alpha : float
+            Slope of fitted line
+
+        Returns
+        -------
+        typical_baseline_heating_runtime : pandas.Series
+            A series containing typical daily baseline heating runtime.
+        """
+        return np.maximum(alpha * (typical_baseline_heating_demand), 0)
+
+    def get_typical_heating_runtime(self, typical_heating_demand, alpha):
+        """ Calculate typical heating runtime given typical heating demand
+        and fitted physical parameters.
+
+        Parameters
+        ----------
+        typical_heating_demand : pandas.Series
+            A series containing typical daily heating demand.
+        alpha : float
+            Slope of fitted line
+
+        Returns
+        -------
+        typical_heating_runtime : pandas.Series
+            A series containing typical daily heating runtime.
+        """
+        return np.maximum(alpha * (typical_heating_demand), 0)
+
     def get_daily_avoided_cooling_runtime(
             self, baseline_runtime, core_cooling_day_set):
         return baseline_runtime - self.cool_runtime[core_cooling_day_set]
@@ -1031,6 +1166,37 @@ class Thermostat(object):
     def get_daily_avoided_heating_runtime(
             self, baseline_runtime, core_heating_day_set):
         return baseline_runtime - self.heat_runtime[core_heating_day_set]
+
+    def get_typical_heating_indoor_temperature(self, core_heating_day_set):
+        """
+        Find average hour-of-day indoor temperature during the core heating days.
+
+        Parameters
+        ----------
+        core_heating_day_set : array_like
+            Core day set over which to calculate heating demand.
+
+        Returns
+        -------
+        temperature_in_typical_heating : pandas.Series
+            A series with (core heating days) hour-of-day mean indoor temperature for all hours of typical weather
+
+        """
+
+        self._protect_heating()
+
+        core_day_set_temp_in = self.temperature_in[core_heating_day_set.hourly]
+
+        core_day_set_temp_mean = core_day_set_temp_in.groupby(core_day_set_temp_in.index.hour).mean()
+        core_day_set_temp_mean.name = 'average_temp'
+
+        temperature_in_typical_heating_df = pd.DataFrame(index=self.temperature_out_typical.index)
+        temperature_in_typical_heating_df['hour_of_day'] = temperature_in_typical_heating_df.index.hour
+        temperature_in_typical_heating_df = temperature_in_typical_heating_df.join(core_day_set_temp_mean,
+                                                                                   on='hour_of_day')
+        temperature_in_typical_heating = temperature_in_typical_heating_df['average_temp']
+
+        return temperature_in_typical_heating
 
     def calculate_epa_field_savings_metrics(self,
             core_cooling_day_set_method="entire_dataset",
@@ -1335,6 +1501,38 @@ class Thermostat(object):
                 n_core_heating_days = self.get_core_day_set_n_days(core_heating_day_set)
                 n_days_in_inputfile_date_range = self.get_inputfile_date_range(core_heating_day_set)
 
+                if self.temperature_out_typical is not None:
+
+                    typical_baseline_heating_demand = self.get_typical_baseline_heating_demand(
+                        baseline90_comfort_temperature,
+                        tau
+                    )
+                    typical_baseline_heating_runtime = self.get_typical_baseline_heating_runtime(
+                        typical_baseline_heating_demand,
+                        alpha
+                    )
+
+                    typical_heating_indoor_temperature = self.get_typical_heating_indoor_temperature(
+                        core_heating_day_set
+                    )
+                    typical_heating_demand = self.get_typical_heating_demand(
+                        typical_heating_indoor_temperature,
+                        tau
+                    )
+                    typical_heating_runtime = self.get_typical_heating_runtime(
+                        typical_heating_demand,
+                        alpha
+                    )
+
+                    avoided_typical_heating_runtime = avoided(typical_baseline_heating_runtime,
+                                                              typical_heating_runtime)
+                    percent_typical_heating_savings = percent_savings(avoided_typical_heating_runtime,
+                                                                      typical_baseline_heating_runtime)
+                else:
+
+                    percent_typical_heating_savings = None
+
+
                 outputs = {
                     "sw_version": get_version(),
 
@@ -1379,6 +1577,8 @@ class Thermostat(object):
                     "total_core_heating_runtime": total_runtime_core_heating,
 
                     "daily_mean_core_heating_runtime": average_daily_heating_runtime,
+
+                    "percent_savings_typical": percent_typical_heating_savings
                 }
 
                 if self.equipment_type in self.AUX_EMERG_EQUIPMENT_TYPES:
@@ -1409,6 +1609,7 @@ class Thermostat(object):
                         additional_outputs[column] = rhu
 
                     outputs.update(additional_outputs)
+
                 metrics.append(outputs)
 
         return metrics
