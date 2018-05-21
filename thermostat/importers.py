@@ -75,7 +75,7 @@ def from_csv(metadata_filename, verbose=False):
 
 # TODO: Change to retrieve tmy3 by zipcode and then remove typical_temperature_data as an input
 def get_single_thermostat(thermostat_id, zipcode, equipment_type,
-                          utc_offset, interval_data_filename, typical_temperature_data):
+                          utc_offset, interval_data_filename, typical_temperature_data=None):
     """ Load a single thermostat directly from an interval data file.
 
     Parameters
@@ -92,7 +92,8 @@ def get_single_thermostat(thermostat_id, zipcode, equipment_type,
         or any other timezone format recognized by the library
         method dateutil.parser.parse.
     interval_data_filename : str
-        The path to the CSV in which the interval data is stored.
+        If typical savings calculations are desired, then this will be a CSV filepath
+        in which the interval data is stored; if not, this defaults (or is set) to None.
 
     Returns
     -------
@@ -166,13 +167,13 @@ def get_single_thermostat(thermostat_id, zipcode, equipment_type,
         station,
         temp_in,
         temp_out,
-        typical_temperature_data,
         cooling_setpoint,
         heating_setpoint,
         cool_runtime,
         heat_runtime,
         auxiliary_heat_runtime,
-        emergency_heat_runtime
+        emergency_heat_runtime,
+        typical_temperature_data
     )
     return thermostat
 

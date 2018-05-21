@@ -49,12 +49,6 @@ class Thermostat(object):
         0.5F.
         Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
         :code:`freq='H'`).
-    temperature_out_typical : pandas.Series
-        Contains typical outdoor temperature data as observed by a relevant
-        weather station in degrees Fahrenheit (F), with resolution of at least
-        0.5F.
-        Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
-        :code:`freq='H'`).
     cooling_setpoint : pandas.Series
         Contains target temperature (setpoint) data in degrees Fahrenheit (F),
         with resolution of at least 0.5F used to control cooling equipment.
@@ -93,6 +87,12 @@ class Thermostat(object):
         over a hour of runtime (impossible).
         Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
         :code:`freq='H'`).
+    temperature_out_typical : pandas.Series
+        Contains typical outdoor temperature data as observed by a relevant
+        weather station in degrees Fahrenheit (F), with resolution of at least
+        0.5F.
+        Should be indexed by a pandas.DatetimeIndex with hourly frequency (i.e.
+        :code:`freq='H'`).
     """
 
     HEATING_EQUIPMENT_TYPES = set([1, 2, 3, 4])
@@ -106,9 +106,10 @@ class Thermostat(object):
 
     def __init__(
             self, thermostat_id, equipment_type, zipcode, station,
-            temperature_in, temperature_out, temperature_out_typical,
+            temperature_in, temperature_out,
             cooling_setpoint, heating_setpoint, cool_runtime, heat_runtime,
-            auxiliary_heat_runtime, emergency_heat_runtime):
+            auxiliary_heat_runtime, emergency_heat_runtime,
+            temperature_out_typical):
 
         self.thermostat_id = thermostat_id
         self.equipment_type = equipment_type
@@ -118,12 +119,16 @@ class Thermostat(object):
         self.temperature_in = self._interpolate(temperature_in, method="linear")
         self.temperature_out = self._interpolate(temperature_out, method="linear")
 
-        typical_year_timestamps = pd.DatetimeIndex(
-            start=datetime.strptime('2017' + '-01-01', '%Y-%m-%d'),
-            freq='H',
-            periods=8760
-        )
-        self.temperature_out_typical = pd.Series(index=typical_year_timestamps, data=temperature_out_typical.values)
+        if temperature_out_typical is not None:
+            typical_year_timestamps = pd.DatetimeIndex(
+                # 2017 is chosen as a non-leap-year to match TMY3 spec; has no bearing on results
+                start=datetime.strptime('2017-01-01', '%Y-%m-%d'),
+                freq='H',
+                periods=8760
+            )
+            self.temperature_out_typical = pd.Series(index=typical_year_timestamps, data=temperature_out_typical.values)
+        else:
+            self.temperature_out_typical = None
 
         self.cooling_setpoint = cooling_setpoint
         self.heating_setpoint = heating_setpoint
