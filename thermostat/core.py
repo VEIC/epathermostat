@@ -3,6 +3,7 @@ from collections import namedtuple
 from itertools import repeat
 import inspect
 from warnings import warn
+import logging
 
 import pandas as pd
 import numpy as np
@@ -11,10 +12,22 @@ from pkg_resources import resource_stream
 
 from thermostat.regression import runtime_regression
 from thermostat import get_version
+from thermostat.climate_zone import retrieve_climate_zone
+
+try:
+    if "0.21." in pd.__version__:
+        warn(
+            "WARNING: Pandas version 0.21.x has known issues and is not supported. "
+            "Please either downgrade to Pandas 0.20.3 or upgrade to the latest Pandas version.")
+except TypeError:
+    pass  # Documentation mocks out pd, so ignore if not present.
 
 CoreDaySet = namedtuple("CoreDaySet",
     ["name", "daily", "hourly", "start_date", "end_date"]
 )
+
+logger = logging.getLogger('epathermostat')
+
 
 class Thermostat(object):
     """ Main thermostat data container. Each parameter which contains
@@ -532,7 +545,16 @@ class Thermostat(object):
                 try:
                     rhu = float(R_aux + R_emg) / float(R_heat + R_emg)
                 except ZeroDivisionError:
+                    logger.debug(
+                        'rhu calculation divided by zero (%s + %s / %s + %s) '
+                        'for thermostat_id %s '
+                        'from %s to %s inclusive' % (
+                            R_aux, R_emg, R_heat, R_emg,
+                            self.thermostat_id,
+                            core_heating_day_set.start_date,
+                            core_heating_day_set.end_date))
                     rhu = np.nan
+
                 data_is_nonsense = R_aux > R_heat
                 if data_is_nonsense:
                     rhu = np.nan
@@ -546,8 +568,7 @@ class Thermostat(object):
                             low_temp, high_temp,
                             self.thermostat_id,
                             core_heating_day_set.start_date,
-                            core_heating_day_set.end_date)
-                    )
+                            core_heating_day_set.end_date))
                 RHUs.append(rhu)
             return np.array(RHUs)
         else:
@@ -603,7 +624,16 @@ class Thermostat(object):
         if isinstance(delta, timedelta):
             return delta.days
         else:
-            return int(delta.astype('timedelta64[D]') / np.timedelta64(1, 'D'))
+            try:
+                result = int(delta.astype('timedelta64[D]') / np.timedelta64(1, 'D'))
+            except ZeroDivisionError:
+                logger.debug(
+                    'Date Range divided by zero: %s / %s '
+                    'for thermostat_id %s' % (
+                        delta.astype('timedelta64[D]'), np.timedelta64(1, 'D'),
+                        self.thermostat_id))
+                result = np.nan
+            return result
 
     def get_cooling_demand(self, core_cooling_day_set):
         """
@@ -685,7 +715,15 @@ class Thermostat(object):
         def calc_estimates(tau):
             cdd = calc_cdd(tau)
             total_cdd = np.sum(cdd)
-            alpha_estimate = total_runtime / total_cdd
+            try:
+                alpha_estimate = total_runtime / total_cdd
+            except ZeroDivisionError:
+                logger.debug(
+                    'Alpha Estimate divided by zero: %s / %s'
+                    'for thermostat %s' % (
+                        total_runtime, total_cdd,
+                        self.thermostat_id))
+                alpha_estimate = np.nan
             runtime_estimate = cdd * alpha_estimate
             errors = daily_runtime - runtime_estimate
             return cdd, alpha_estimate, errors
@@ -707,7 +745,16 @@ class Thermostat(object):
         mse = np.nanmean((errors)**2)
         rmse = mse ** 0.5
         mean_daily_runtime = np.nanmean(daily_runtime)
-        cvrmse = rmse / mean_daily_runtime
+        try:
+            cvrmse = rmse / mean_daily_runtime
+        except ZeroDivisionError:
+            logger.debug(
+                'CVRMSE divided by zero: %s / %s '
+                'for thermostat_id %s ' % (
+                    rmse, mean_daily_runtime,
+                    self.thermostat_id))
+            cvrmse = np.nan
+
         mape = np.nanmean(np.absolute(errors / mean_daily_runtime))
         mae = np.nanmean(np.absolute(errors))
 
@@ -790,7 +837,15 @@ class Thermostat(object):
         def calc_estimates(tau):
             hdd = calc_hdd(tau)
             total_hdd = np.sum(hdd)
-            alpha_estimate = total_runtime / total_hdd
+            try:
+                alpha_estimate = total_runtime / total_hdd
+            except ZeroDivisionError:
+                logger.debug(
+                    'alpha_estimate divided by zero: %s / %s '
+                    'for thermostat_id %s ' % (
+                        total_runtime, total_hdd,
+                        self.thermostat_id))
+                alpha_estimate = np.nan
             runtime_estimate = hdd * alpha_estimate
             errors = daily_runtime - runtime_estimate
             return hdd, alpha_estimate, errors
@@ -813,7 +868,16 @@ class Thermostat(object):
         mse = np.nanmean((errors)**2)
         rmse = mse ** 0.5
         mean_daily_runtime = np.nanmean(daily_runtime)
-        cvrmse = rmse / mean_daily_runtime
+        try:
+            cvrmse = rmse / mean_daily_runtime
+        except ZeroDivisionError:
+            logger.warn(
+                'CVRMSE divided by zero: %s / %s '
+                'for thermostat_id %s ' % (
+                    rmse, mean_daily_runtime,
+                    self.thermostat_id))
+            cvrmse = np.nan
+
         mape = np.nanmean(np.absolute(errors / mean_daily_runtime))
         mae = np.nanmean(np.absolute(errors))
 
@@ -854,17 +918,16 @@ class Thermostat(object):
 
         self._protect_cooling()
 
-        if method == 'tenth_percentile':
+        if method != 'tenth_percentile':
+            raise NotImplementedError
 
-            if source == 'cooling_setpoint':
-                return self.cooling_setpoint[core_cooling_day_set.hourly].dropna().quantile(.1)
-            elif source == 'temperature_in':
-                return self.temperature_in[core_cooling_day_set.hourly].dropna().quantile(.1)
-            else:
-                raise NotImplementedError
-
+        if source == 'cooling_setpoint':
+            return self.cooling_setpoint[core_cooling_day_set.hourly].dropna().quantile(.1)
+        elif source == 'temperature_in':
+            return self.temperature_in[core_cooling_day_set.hourly].dropna().quantile(.1)
         else:
             raise NotImplementedError
+
 
     def get_core_heating_day_baseline_setpoint(self, core_heating_day_set,
             method='ninetieth_percentile', source='temperature_in'):
@@ -891,17 +954,16 @@ class Thermostat(object):
 
         self._protect_heating()
 
-        if method == 'ninetieth_percentile':
+        if method != 'ninetieth_percentile':
+            raise NotImplementedError
 
-            if source == 'heating_setpoint':
-                return self.heating_setpoint[core_heating_day_set.hourly].dropna().quantile(.9)
-            elif source == 'temperature_in':
-                return self.temperature_in[core_heating_day_set.hourly].dropna().quantile(.9)
-            else:
-                raise NotImplementedError
-
+        if source == 'heating_setpoint':
+            return self.heating_setpoint[core_heating_day_set.hourly].dropna().quantile(.9)
+        elif source == 'temperature_in':
+            return self.temperature_in[core_heating_day_set.hourly].dropna().quantile(.9)
         else:
             raise NotImplementedError
+
 
     def get_baseline_cooling_demand(self, core_cooling_day_set, temp_baseline, tau):
         """ Calculate baseline cooling demand for a particular core cooling
@@ -1072,41 +1134,10 @@ class Thermostat(object):
             or cooling days.
         """
 
-        def _load_mapping(filename_or_buffer):
-            df = pd.read_csv(
-                filename_or_buffer,
-                usecols=["zipcode", "group"],
-                dtype={"zipcode": str, "group": str},
-            ).set_index('zipcode').drop('zipcode')
-            df = df.where((pd.notnull(df)), None)
-
-            return dict(df.to_records('index'))
-
-        if climate_zone_mapping is None:
-            with resource_stream('thermostat.resources',
-                                 'Building America Climate Zone to Zipcode Database_Rev2_2016.09.08.csv') as f:
-                mapping = _load_mapping(f)
-        else:
-            try:
-                mapping = _load_mapping(climate_zone_mapping)
-            except: #!!! danger: wildcard except. Should specify exception.
-                raise ValueError("Could not load climate zone mapping")
-
-        with resource_stream('thermostat.resources', 'regional_baselines.csv') as f:
-            df = pd.read_csv(
-                f, usecols=[
-                    'EIA Climate Zone',
-                    'Baseline heating temp (F)',
-                    'Baseline cooling temp (F)'
-                ])
-            df = df.where((pd.notnull(df)), None)
-            df = df.set_index('EIA Climate Zone')
-            cooling_regional_baseline_temps = { k: v for k, v in df['Baseline cooling temp (F)'].iteritems()}
-            heating_regional_baseline_temps = { k: v for k, v in df['Baseline heating temp (F)'].iteritems()}
-
-        climate_zone = mapping.get(self.zipcode)
-        baseline_regional_cooling_comfort_temperature = cooling_regional_baseline_temps.get(climate_zone, None)
-        baseline_regional_heating_comfort_temperature = heating_regional_baseline_temps.get(climate_zone, None)
+        retval = retrieve_climate_zone(climate_zone_mapping, self.zipcode)
+        climate_zone = retval.climate_zone
+        baseline_regional_cooling_comfort_temperature = retval.baseline_regional_cooling_comfort_temperature
+        baseline_regional_heating_comfort_temperature = retval.baseline_regional_heating_comfort_temperature
 
         metrics = []
 
@@ -1114,7 +1145,16 @@ class Thermostat(object):
             return baseline - observed
 
         def percent_savings(avoided, baseline):
-            return (avoided.mean() / baseline.mean()) * 100.0
+            try:
+                savings = (avoided.mean() / baseline.mean()) * 100.0
+            except ZeroDivisionError:
+                logger.debug(
+                    'percent_savings divided by zero: %s / %s '
+                    'for thermostat_id %s ' % (
+                        avoided.mean(), baseline.mean(),
+                        self.thermostat_id))
+                savings = np.nan
+            return savings
 
         if self.equipment_type in self.COOLING_EQUIPMENT_TYPES:
             for core_cooling_day_set in self.get_core_cooling_days(
@@ -1139,8 +1179,23 @@ class Thermostat(object):
                 total_runtime_core_cooling = daily_runtime.sum()
                 n_days = core_cooling_day_set.daily.sum()
 
-                average_daily_cooling_runtime = \
-                    total_runtime_core_cooling / n_days
+                if np.isnan(total_runtime_core_cooling):
+                    warn(
+                        "WARNING: Total Runtime Core Cooling Days is nan. "
+                        "This may mean that you have pandas 0.21.x installed "
+                        "(which is not supported).")
+
+                if n_days == 0:
+                    warn(
+                        "WARNING: Number of valid cooling days is zero.")
+
+                # Raise a division error if dividing by zero and replace with np.nan instead
+                old_err_state = np.seterr(divide='raise')
+                try:
+                    average_daily_cooling_runtime = np.divide(total_runtime_core_cooling, n_days)
+                except FloatingPointError:
+                    average_daily_cooling_runtime = np.nan
+                np.seterr(**old_err_state)
 
                 baseline10_demand = self.get_baseline_cooling_demand(
                     core_cooling_day_set,
@@ -1201,6 +1256,9 @@ class Thermostat(object):
                 n_core_cooling_days = self.get_core_day_set_n_days(core_cooling_day_set)
                 n_days_in_inputfile_date_range = self.get_inputfile_date_range(core_cooling_day_set)
 
+                core_cooling_days_mean_indoor_temperature = self.temperature_in[core_cooling_day_set.hourly].mean()
+                core_cooling_days_mean_outdoor_temperature = self.temperature_out[core_cooling_day_set.hourly].mean()
+
                 outputs = {
                     "sw_version": get_version(),
 
@@ -1245,6 +1303,11 @@ class Thermostat(object):
                     "total_core_cooling_runtime": total_runtime_core_cooling,
 
                     "daily_mean_core_cooling_runtime": average_daily_cooling_runtime,
+
+                    "core_cooling_days_mean_indoor_temperature": core_cooling_days_mean_indoor_temperature,
+                    "core_cooling_days_mean_outdoor_temperature": core_cooling_days_mean_outdoor_temperature,
+                    "core_mean_indoor_temperature": core_cooling_days_mean_indoor_temperature,
+                    "core_mean_outdoor_temperature": core_cooling_days_mean_outdoor_temperature,
                 }
 
                 metrics.append(outputs)
@@ -1271,8 +1334,24 @@ class Thermostat(object):
 
                 total_runtime_core_heating = daily_runtime.sum()
                 n_days = core_heating_day_set.daily.sum()
-                average_daily_heating_runtime = \
-                    total_runtime_core_heating / n_days
+
+                if np.isnan(total_runtime_core_heating):
+                    warn(
+                        "WARNING: Total Runtime Core Heating is nan. "
+                        "This may mean that you have pandas 0.21.x installed "
+                        "(which is not supported).")
+
+                if n_days == 0:
+                    warn(
+                        "WARNING: Number of valid heating days is zero.")
+
+                # Raise a division error if dividing by zero and replace with np.nan instead
+                old_err_state = np.seterr(divide='raise')
+                try:
+                    average_daily_heating_runtime = np.divide(total_runtime_core_heating, n_days)
+                except FloatingPointError:
+                    average_daily_heating_runtime = np.nan
+                np.seterr(**old_err_state)
 
                 baseline90_demand = self.get_baseline_heating_demand(
                     core_heating_day_set,
@@ -1330,10 +1409,12 @@ class Thermostat(object):
                     baseline_total_core_day_runtime_baseline_regional = None
                     _daily_mean_core_day_demand_baseline_baseline_regional = None
 
-
                 n_days_both, n_days_insufficient_data = self.get_ignored_days(core_heating_day_set)
                 n_core_heating_days = self.get_core_day_set_n_days(core_heating_day_set)
                 n_days_in_inputfile_date_range = self.get_inputfile_date_range(core_heating_day_set)
+
+                core_heating_days_mean_indoor_temperature = self.temperature_in[core_heating_day_set.hourly].mean()
+                core_heating_days_mean_outdoor_temperature = self.temperature_out[core_heating_day_set.hourly].mean()
 
                 outputs = {
                     "sw_version": get_version(),
@@ -1343,7 +1424,7 @@ class Thermostat(object):
                     "heating_or_cooling": core_heating_day_set.name,
                     "zipcode": self.zipcode,
                     "station": self.station,
-                    "climate_zone": mapping.get(self.zipcode),
+                    "climate_zone": climate_zone,
 
                     "start_date": pd.Timestamp(core_heating_day_set.start_date).to_pydatetime().isoformat(),
                     "end_date": pd.Timestamp(core_heating_day_set.end_date).to_pydatetime().isoformat(),
@@ -1379,6 +1460,11 @@ class Thermostat(object):
                     "total_core_heating_runtime": total_runtime_core_heating,
 
                     "daily_mean_core_heating_runtime": average_daily_heating_runtime,
+
+                    "core_heating_days_mean_indoor_temperature": core_heating_days_mean_indoor_temperature,
+                    "core_heating_days_mean_outdoor_temperature": core_heating_days_mean_outdoor_temperature,
+                    "core_mean_indoor_temperature": core_heating_days_mean_indoor_temperature,
+                    "core_mean_outdoor_temperature": core_heating_days_mean_outdoor_temperature,
                 }
 
                 if self.equipment_type in self.AUX_EMERG_EQUIPMENT_TYPES:

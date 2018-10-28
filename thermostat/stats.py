@@ -2,9 +2,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm
 
-from eemeter.location import _load_zipcode_to_lat_lng_index
-from eemeter.location import _load_zipcode_to_station_index
-
 from collections import OrderedDict
 from collections import defaultdict
 from itertools import chain
@@ -50,6 +47,11 @@ REAL_OR_INTEGER_VALUED_COLUMNS_HEATING = [
     'total_emergency_heating_core_day_runtime',
 
     'daily_mean_core_heating_runtime',
+
+    'core_heating_days_mean_indoor_temperature',
+    'core_heating_days_mean_outdoor_temperature',
+    'core_mean_indoor_temperature',
+    'core_mean_outdoor_temperature',
 
     'rhu_00F_to_05F',
     'rhu_05F_to_10F',
@@ -98,6 +100,11 @@ REAL_OR_INTEGER_VALUED_COLUMNS_COOLING = [
     'total_core_cooling_runtime',
 
     'daily_mean_core_cooling_runtime',
+
+    'core_cooling_days_mean_indoor_temperature',
+    'core_cooling_days_mean_outdoor_temperature',
+    'core_mean_indoor_temperature',
+    'core_mean_outdoor_temperature',
 ]
 
 REAL_OR_INTEGER_VALUED_COLUMNS_ALL = [
@@ -140,6 +147,9 @@ REAL_OR_INTEGER_VALUED_COLUMNS_ALL = [
 
     'daily_mean_core_cooling_runtime',
     'daily_mean_core_heating_runtime',
+
+    'core_mean_indoor_temperature',
+    'core_mean_outdoor_temperature',
 
     'rhu_00F_to_05F',
     'rhu_05F_to_10F',
